@@ -2,6 +2,7 @@
 #include <Hazel/Core/EntryPoint.h>
 
 #include "EditorLayer.h"
+#include "TestLayer.h"
 
 namespace Hazel {
 
@@ -11,7 +12,9 @@ namespace Hazel {
 		Hazelnut(const ApplicationSpecification& spec)
 			: Application(spec)
 		{
-			PushLayer(new EditorLayer());
+			//PushLayer(new EditorLayer());
+			PushLayer(new TestLayer());
+			
 		}
 	};
 
