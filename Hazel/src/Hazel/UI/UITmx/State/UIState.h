@@ -1,5 +1,9 @@
 #pragma once
 
+#define UI_NORMAL_STATE		"normal"
+#define UI_HOVER_STATE		"hover"
+#define UI_PRESSED_STATE	"pressed"
+
 namespace Hazel
 {
 	class UIInteractive; // Ç°ÖÃÉùÃ÷
