@@ -307,6 +307,12 @@ namespace Hazel {
 		RenderScene(camera);
 	}
 
+	void Scene::OnUpdateEditor(Timestep ts, TmxCamera& camera)
+	{
+		// Render
+		RenderScene(camera);
+	}
+
 	void Scene::OnViewportResize(uint32_t width, uint32_t height)
 	{
 		if (m_ViewportWidth == width && m_ViewportHeight == height)
@@ -472,8 +478,105 @@ namespace Hazel {
 
 		Renderer2D::EndScene();
 	}
+
+	void Scene::RenderScene(TmxCamera& camera)
+	{
+		Renderer2D::BeginScene(camera.GetViewProjectionMatrix());
+
+		// Draw sprites
+		{
+			auto group = m_Registry.group<TransformComponent>(entt::get<SpriteRendererComponent>);
+			for (auto entity : group)
+			{
+				auto [transform, sprite] = group.get<TransformComponent, SpriteRendererComponent>(entity);
+
+
+				if (sprite.ScrollFactor == glm::vec2(0.0f) && sprite.Repeat == glm::bvec2(0))
+				{
+					//不卷不重复
+					Renderer2D::DrawTmxSprite(transform.GetTransform(), sprite, (int)entity);
+				}
+				else
+				{
+					const glm::vec2 cameraPos = camera.GetPosition();
+					const glm::vec2  pos= glm::vec2(transform.Translation);
+					const glm::vec2  scale = glm::vec2(transform.Scale);
+					
+					// 应用相机变换
+					glm::vec2 positionScreen = pos - cameraPos * sprite.ScrollFactor;
+
+					// 计算缩放后的纹理尺寸 
+					float scaled_tex_w = scale.x;
+					float scaled_tex_h = scale.y;
+
+					glm::vec2 start, stop;
+					glm::vec2 viewportSize = camera.GetViewportSize();
+
+					if (sprite.Repeat.x) {
+						// 使用 glm::mod 进行浮点数取模
+						start.x = glm::mod(positionScreen.x, scaled_tex_w) - scaled_tex_w;
+						stop.x = viewportSize.x;
+					}
+					else {
+						start.x = positionScreen.x;
+						stop.x = glm::min(positionScreen.x + scaled_tex_w, viewportSize.x); // 结束点是一个纹理宽度之后，但不超过视口宽度
+					}
+					if (sprite.Repeat.y) {
+						start.y = glm::mod(positionScreen.y, scaled_tex_h) - scaled_tex_h;
+						stop.y = viewportSize.y;
+					}
+					else {
+						start.y = positionScreen.y;
+						stop.y = glm::min(positionScreen.y + scaled_tex_h, viewportSize.y); // 结束点是一个纹理高度之后，但不超过视口高度
+					}
+
+					for (float y = start.y; y < stop.y; y += scaled_tex_h)
+					{
+						for (float x = start.x; x < stop.x; x += scaled_tex_w)
+						{
+							Renderer2D::DrawQuad(glm::vec2(x, y), glm::vec2(scaled_tex_w, scaled_tex_h), sprite.Texture);
+							//SDL_FRect dest_rect = { x, y, scaled_tex_w, scaled_tex_h };
+							//if (!SDL_RenderTexture(renderer_, texture, nullptr, &dest_rect)) {
+							//	spdlog::error("渲染视差纹理失败（ID: {}）：{}", sprite.getTextureId(), SDL_GetError());
+							//	return;
+							//}
+						}
+					}
+
+				}
+				//return;
+				//Renderer2D::DrawTmxSprite(transform.GetTransform(), sprite, (int)entity);
+			}
+		}
+
+		// Draw circles
+		{
+			auto view = m_Registry.view<TransformComponent, CircleRendererComponent>();
+			for (auto entity : view)
+			{
+				auto [transform, circle] = view.get<TransformComponent, CircleRendererComponent>(entity);
+
+				Renderer2D::DrawCircle(transform.GetTransform(), circle.Color, circle.Thickness, circle.Fade, (int)entity);
+			}
+		}
+
+		// Draw text
+		{
+			auto view = m_Registry.view<TransformComponent, TextComponent>();
+			for (auto entity : view)
+			{
+				auto [transform, text] = view.get<TransformComponent, TextComponent>(entity);
+
+				Renderer2D::DrawString(text.TextString, transform.GetTransform(), text, (int)entity);
+			}
+		}
+
+		Renderer2D::EndScene();
+	}
+
+	
   
-  template<typename T>
+	template<typename T>
 	void Scene::OnComponentAdded(Entity entity, T& component)
 	{
 		static_assert(sizeof(T) == 0);

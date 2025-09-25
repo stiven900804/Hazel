@@ -42,14 +42,107 @@ void TestLayer::OnAttach() {
 	m_EditorScene = CreateRef<Scene>();
 	m_ActiveScene = m_EditorScene;
 
+	auto commandLineArgs = Application::Get().GetSpecification().CommandLineArgs;
+	if (commandLineArgs.Count > 1)
+	{
+		auto projectFilePath = commandLineArgs[1];
+		//OpenProject(projectFilePath);
+	}
+	else
+	{
+		// TODO(Yan): prompt the user to select a directory
+		// NewProject();
+
+		// If no project is opened, close Hazelnut
+		// NOTE: this is while we don't have a new project path
+		/*if (!OpenProject())
+			Application::Get().Close();*/
+		OpenTmxFile("D:\\Code\\Hazel\\Hazelnut\\SandboxProject\\tmxassets\\maps\\level0.tmj");
+
+	}
+
+	m_EditorCamera = EditorCamera(30.0f, 1.778f, 0.1f, 1000.0f);
+	m_TmxCamera = TmxCamera(glm::vec2(1280.0f /2.0,720.0f/2.0));
+	Renderer2D::SetLineWidth(4.0f);
+
 }
 
 void TestLayer::OnDetach() {
     // 层分离时的逻辑
+	HZ_PROFILE_FUNCTION();
 }
 
 void TestLayer::OnUpdate(Timestep ts) {
-    // 每帧更新逻辑
+	HZ_PROFILE_FUNCTION();
+
+	m_ActiveScene->OnViewportResize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
+
+	// Resize
+	if (FramebufferSpecification spec = m_Framebuffer->GetSpecification();
+		m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f && // zero sized framebuffer is invalid
+		(spec.Width != m_ViewportSize.x || spec.Height != m_ViewportSize.y))
+	{
+		m_Framebuffer->Resize((uint32_t)m_ViewportSize.x, (uint32_t)m_ViewportSize.y);
+		m_CameraController.OnResize(m_ViewportSize.x, m_ViewportSize.y);
+		m_EditorCamera.SetViewportSize(m_ViewportSize.x, m_ViewportSize.y);
+		m_TmxCamera.SetViewportSize(m_ViewportSize.x/2, m_ViewportSize.y/2);
+	}
+
+	// Render
+	Renderer2D::ResetStats();
+	m_Framebuffer->Bind();
+	RenderCommand::SetClearColor({ 0.1f, 0.1f, 0.1f, 1 });
+	RenderCommand::Clear();
+
+	// Clear our entity ID attachment to -1
+	m_Framebuffer->ClearAttachment(1, -1);
+
+	switch (m_SceneState)
+	{
+	case SceneState::Edit:
+	{
+		if (m_ViewportFocused)
+			m_CameraController.OnUpdate(ts);
+
+		m_EditorCamera.OnUpdate(ts);
+		m_TmxCamera.OnUpdate(ts);
+
+		//m_ActiveScene->OnUpdateEditor(ts, m_EditorCamera);
+		m_ActiveScene->OnUpdateEditor(ts, m_TmxCamera);
+		//m_ActiveScene->OnUpdateEditor(ts, m_EditorCamera);
+		break;
+	}
+	case SceneState::Simulate:
+	{
+		m_EditorCamera.OnUpdate(ts);
+
+		m_ActiveScene->OnUpdateSimulation(ts, m_EditorCamera);
+		break;
+	}
+	case SceneState::Play:
+	{
+		m_ActiveScene->OnUpdateRuntime(ts);
+		break;
+	}
+	}
+
+	auto [mx, my] = ImGui::GetMousePos();
+	mx -= m_ViewportBounds[0].x;
+	my -= m_ViewportBounds[0].y;
+	glm::vec2 viewportSize = m_ViewportBounds[1] - m_ViewportBounds[0];
+	my = viewportSize.y - my;
+	int mouseX = (int)mx;
+	int mouseY = (int)my;
+
+	if (mouseX >= 0 && mouseY >= 0 && mouseX < (int)viewportSize.x && mouseY < (int)viewportSize.y)
+	{
+		int pixelData = m_Framebuffer->ReadPixel(1, mouseX, mouseY);
+		m_HoveredEntity = pixelData == -1 ? Entity() : Entity((entt::entity)pixelData, m_ActiveScene.get());
+	}
+
+	OnOverlayRender();
+
+	m_Framebuffer->Unbind();
 }
 
 void TestLayer::OnImGuiRender() 
@@ -309,7 +402,93 @@ void TestLayer::OpenTmxFile(const std::filesystem::path& path)
 
 void TestLayer::UI_Toolbar()
 {
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 2));
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemInnerSpacing, ImVec2(0, 0));
+	ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+	auto& colors = ImGui::GetStyle().Colors;
+	const auto& buttonHovered = colors[ImGuiCol_ButtonHovered];
+	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(buttonHovered.x, buttonHovered.y, buttonHovered.z, 0.5f));
+	const auto& buttonActive = colors[ImGuiCol_ButtonActive];
+	ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(buttonActive.x, buttonActive.y, buttonActive.z, 0.5f));
 
+	ImGui::Begin("##toolbar", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+	bool toolbarEnabled = (bool)m_ActiveScene;
+
+	ImVec4 tintColor = ImVec4(1, 1, 1, 1);
+	if (!toolbarEnabled)
+		tintColor.w = 0.5f;
+
+	float size = ImGui::GetWindowHeight() - 4.0f;
+	ImGui::SetCursorPosX((ImGui::GetWindowContentRegionMax().x * 0.5f) - (size * 0.5f));
+
+	bool hasPlayButton = m_SceneState == SceneState::Edit || m_SceneState == SceneState::Play;
+	bool hasSimulateButton = m_SceneState == SceneState::Edit || m_SceneState == SceneState::Simulate;
+	bool hasPauseButton = m_SceneState != SceneState::Edit;
+
+	if (hasPlayButton)
+	{
+		Ref<Texture2D> icon = (m_SceneState == SceneState::Edit || m_SceneState == SceneState::Simulate) ? m_IconPlay : m_IconStop;
+		if (ImGui::ImageButton((ImTextureID)(uint64_t)icon->GetRendererID(), ImVec2(size, size), ImVec2(0, 0), ImVec2(1, 1), 0, ImVec4(0.0f, 0.0f, 0.0f, 0.0f), tintColor) && toolbarEnabled)
+		{
+			if (m_SceneState == SceneState::Edit || m_SceneState == SceneState::Simulate)
+			{
+				;// OnScenePlay();
+			}
+			else if (m_SceneState == SceneState::Play)
+			{
+				//OnSceneStop();
+			}
+		}
+	}
+
+	if (hasSimulateButton)
+	{
+		if (hasPlayButton)
+			ImGui::SameLine();
+
+		Ref<Texture2D> icon = (m_SceneState == SceneState::Edit || m_SceneState == SceneState::Play) ? m_IconSimulate : m_IconStop;
+		if (ImGui::ImageButton((ImTextureID)(uint64_t)icon->GetRendererID(), ImVec2(size, size), ImVec2(0, 0), ImVec2(1, 1), 0, ImVec4(0.0f, 0.0f, 0.0f, 0.0f), tintColor) && toolbarEnabled)
+		{
+			if (m_SceneState == SceneState::Edit || m_SceneState == SceneState::Play)
+			{
+				//OnSceneSimulate();
+			}
+			else if (m_SceneState == SceneState::Simulate)
+			{
+				//OnSceneStop();
+			}
+		}
+	}
+	if (hasPauseButton)
+	{
+		bool isPaused = m_ActiveScene->IsPaused();
+		ImGui::SameLine();
+		{
+			Ref<Texture2D> icon = m_IconPause;
+			if (ImGui::ImageButton((ImTextureID)(uint64_t)icon->GetRendererID(), ImVec2(size, size), ImVec2(0, 0), ImVec2(1, 1), 0, ImVec4(0.0f, 0.0f, 0.0f, 0.0f), tintColor) && toolbarEnabled)
+			{
+				m_ActiveScene->SetPaused(!isPaused);
+			}
+		}
+
+		// Step button
+		if (isPaused)
+		{
+			ImGui::SameLine();
+			{
+				Ref<Texture2D> icon = m_IconStep;
+				bool isPaused = m_ActiveScene->IsPaused();
+				if (ImGui::ImageButton((ImTextureID)(uint64_t)icon->GetRendererID(), ImVec2(size, size), ImVec2(0, 0), ImVec2(1, 1), 0, ImVec4(0.0f, 0.0f, 0.0f, 0.0f), tintColor) && toolbarEnabled)
+				{
+					m_ActiveScene->Step();
+				}
+			}
+		}
+	}
+	ImGui::PopStyleVar(2);
+	ImGui::PopStyleColor(3);
+	ImGui::End();
 }
 
 }

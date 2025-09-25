@@ -57,11 +57,21 @@ namespace Hazel {
 		glm::vec4 Color{ 1.0f, 1.0f, 1.0f, 1.0f };
 		Ref<Texture2D> Texture;
 		float TilingFactor = 1.0f;
+		glm::vec2 ScrollFactor;                   ///< @brief 滚动速度因子 (0=静止, 1=随相机移动, <1=比相机慢)
+		glm::bvec2 Repeat;                         ///< @brief 是否沿着X和Y轴周期性重复
+		bool IsHidden = false;                    ///< @brief 是否隐藏（不渲染）
 
 		SpriteRendererComponent() = default;
 		SpriteRendererComponent(const SpriteRendererComponent&) = default;
 		SpriteRendererComponent(const glm::vec4& color)
-			: Color(color) {}
+			: Color(color)
+		{
+			ScrollFactor = glm::vec2(1.0,1.0);
+			Repeat = glm::bvec2(0, 0);
+		};
+		SpriteRendererComponent(const glm::vec2 scrollFactor, const glm::bvec2 repeat)
+			: ScrollFactor(scrollFactor), Repeat(repeat){
+		}
 	};
 
 	struct CircleRendererComponent

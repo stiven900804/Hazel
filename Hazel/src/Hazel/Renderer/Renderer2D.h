@@ -21,6 +21,7 @@ namespace Hazel {
 		static void BeginScene(const Camera& camera, const glm::mat4& transform);
 		static void BeginScene(const EditorCamera& camera);
 		static void BeginScene(const OrthographicCamera& camera); // TODO: Remove
+		static void BeginScene(const glm::mat4& viewProj);
 		static void EndScene();
 		static void Flush();
 
@@ -46,7 +47,8 @@ namespace Hazel {
 		static void DrawRect(const glm::mat4& transform, const glm::vec4& color, int entityID = -1);
 
 		static void DrawSprite(const glm::mat4& transform, SpriteRendererComponent& src, int entityID);
-
+		static void DrawTmxSprite(const glm::mat4& transform, SpriteRendererComponent& src, int entityID);
+		
 		struct TextParams
 		{
 			glm::vec4 Color{ 1.0f };

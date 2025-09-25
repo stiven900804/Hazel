@@ -5,6 +5,8 @@
 #include "Panels/ContentBrowserPanel.h"
 #include "Hazel/Renderer/EditorCamera.h"
 
+#include "Hazel/Renderer/TmxCamera.h"
+
 namespace Hazel {
 
 	// TestLayer 继承自 Layer，作为编辑器或测试层的实现
@@ -64,6 +66,8 @@ namespace Hazel {
 
 		// 编辑器摄像机
 		EditorCamera m_EditorCamera;
+
+		TmxCamera m_TmxCamera;
 
 		Ref<Texture2D> m_CheckerboardTexture;
 
